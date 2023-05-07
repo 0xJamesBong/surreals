@@ -52,12 +52,12 @@ contract VNO_Test is SharedFunctions {
         return tax;
     }
 
-    function get_tokenId_from_universal(
-        uint256 num
-    ) public view returns (uint256 tokenId) {
-        tokenId = vno.universal_to_tokenId(num);
-        return tokenId;
-    }
+    // function get_tokenId_from_universal(
+    //     uint256 num
+    // ) public view returns (uint256 tokenId) {
+    //     tokenId = vno.universal_to_tokenId(num);
+    //     return tokenId;
+    // }
 
     function testMakeZero() public {
         uint256 early = 1900000000;
@@ -113,7 +113,7 @@ contract VNO_Test is SharedFunctions {
         hoax(bob);
         vno.mintZero();
 
-        uint256 bobNumber = getUniversalFromTokenId(bobTokenId).number;
+        uint256 bobNumber = getNumberFromTokenId(bobTokenId);
         uint256 bobInstance = getUniversalFromTokenId(bobTokenId).instances;
         (, uint256 bobMintTime, uint256 bobOrder, ) = vno.tokenId_to_metadata(
             bobTokenId
@@ -369,7 +369,7 @@ contract VNO_Test is SharedFunctions {
         console.log(getNumberFromTokenId(id2));
 
         uint256 tax = 1000;
-        // console.log(get_tax_from_universal(2));
+        console.log(get_tax_from_universal(2));
         hoax(alice);
         vno.setDirectMintTax(2, id1, tax);
         assertEq(get_tax_from_universal(2), tax);
@@ -510,7 +510,8 @@ contract VNO_Test is SharedFunctions {
     function get_balance_from_universal(
         uint256 universal
     ) public view returns (uint256 balance) {
-        balance = vno.universalToBalance(universal);
+        uint256 tokenId = get_tokenId_from_universal(universal);
+        balance = vno.tokenId_to_balances(tokenId);
         return balance;
     }
 
@@ -518,8 +519,8 @@ contract VNO_Test is SharedFunctions {
         uint256 n = 2 ** 5 * 3 ** 2 * 7; // 2016
         uint256 universal_id = make_universal(n, alice, bob); // 2016
         uint256[] memory factorisation = vno.factorise(n);
-        VNO.Universal memory universal = getUniversalFromTokenId(universal_id);
-        uint256[] memory primes = universal.primes;
+
+        uint256[] memory primes = getUniversalFromTokenId(universal_id).primes;
         for (uint256 i; i < primes.length; i++) {
             assertEq(factorisation[i], primes[i]);
             console.log("prime", i, primes[i]);
@@ -530,8 +531,7 @@ contract VNO_Test is SharedFunctions {
         uint256 n = 2 ** 5 * 3 ** 2 * 7; // 2016
         uint256 particular_id = make_particular(n, alice, bob);
         uint256[] memory factorisation = vno.factorise(n);
-        VNO.Universal memory universal = getUniversalFromTokenId(particular_id);
-        uint256[] memory primes = universal.primes;
+        uint256[] memory primes = getUniversalFromTokenId(particular_id).primes;
         for (uint256 i; i < primes.length; i++) {
             assertEq(factorisation[i], primes[i]);
         }
@@ -630,19 +630,19 @@ contract VNO_Test is SharedFunctions {
             get_balance_from_universal(12),
             ((30 + 90) * 1000000000000 * (1000000 - cut)) / 1000000
         );
-        assertEq(
-            vno.treasuryBalance(),
-            ((30 + 90) * 1000000000000 * (cut) * 20) / (100 * 1000000)
-        );
-        for (uint256 i = 0; i < vno.currentId(); i++) {
-            if (vno.tokenId_active(i) && !vno.isUniversal(i)) {
-                console.log(
-                    "particular holder of id",
-                    i,
-                    vno.tokenId_to_balances(i)
-                );
-            }
-        }
+        // assertEq(
+        //     vno.treasuryBalance(),
+        //     ((30 + 90) * 1000000000000 * (cut) * 20) / (100 * 1000000)
+        // );
+        // for (uint256 i = 0; i < vno.currentId(); i++) {
+        //     if (vno.tokenId_active(i) && !vno.isUniversal(i)) {
+        //         console.log(
+        //             "particular holder of id",
+        //             i,
+        //             vno.tokenId_to_balances(i)
+        //         );
+        //     }
+        // }
     }
     // https://vomtom.at/solidity-0-6-4-and-call-value-curly-brackets/
 

@@ -55,18 +55,37 @@ contract SharedFunctions is Test {
             keccak256(abi.encodePacked(str2)));
     }
 
+    // struct Universal {
+    //     uint256 number;
+    //     uint256 instances;
+    //     uint256 activeParticulars;
+    //     uint256[] primes;
+    //     bool made;
+    // }
+
     function getUniversalFromTokenId(
         uint256 tokenId
     ) public view returns (VNO.Universal memory universal) {
         // Returns the universal that a token belongs to
+
         (
-            VNO.Universal memory _universal,
+            uint256 number,
             uint256 mintTime,
             uint256 order,
             string memory method // Make sure to remove the extra component
         ) = vno.tokenId_to_metadata(tokenId);
 
-        return _universal;
+        (
+            uint256 num,
+            uint256 instances,
+            uint256 activeParticulars,
+            uint256 tokenId // bool made // uint256[] memory primes
+        ) = vno.num_to_universal(number);
+        uint256[] memory primes = vno.getPrimesFromNum(num);
+
+        return (
+            VNO.Universal(num, instances, activeParticulars, tokenId, primes)
+        );
     }
 
     function getNumberFromTokenId(
@@ -77,26 +96,14 @@ contract SharedFunctions is Test {
         return number;
     }
 
-    // function getPrimesFromNum(
-    //     uint256 num
-    // ) public view returns (uint256[] memory) {
-    //     (
-    //         string memory nestedString,
-    //         uint256 number,
-    //         uint256 instances,
-    //         uint256[] memory primes
-    //     ) = vno.num_to_universal(num);
-    //     console.log(nestedString, number, instances);
-    //     return primes;
-    // }
+    function get_tokenId_from_universal(
+        uint256 num
+    ) public view returns (uint256 tokenId) {
+        (, , , uint256 tokenId) = vno.num_to_universal(num);
 
-    // function getNestedStringFromTokenId(
-    //     uint256 tokenId
-    // ) public view returns (string memory nestedString) {
-    //     VNO.Universal memory universal = getUniversalFromTokenId(tokenId);
-    //     string memory nestedString = universal.nestedString;
-    //     return nestedString;
-    // }
+        console.log("get_tokenId_from_universal says:", tokenId);
+        return tokenId;
+    }
 
     function make_universal(
         uint256 num,
@@ -131,7 +138,7 @@ contract SharedFunctions is Test {
         uint256 id = make_universal(num, precedingUniversalsOwner, alice);
         console.log("alice", alice);
         console.log("bob", bob);
-        console.log(getNumberFromTokenId(id), num);
+        // console.log(getNumberFromTokenId(id), num);
         hoax(precedingUniversalsOwner);
         uint256 nid = vno.mintByDirect{value: 10 ether}(num);
         console.log("nid:", nid);

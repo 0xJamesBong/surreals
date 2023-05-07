@@ -173,12 +173,10 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     struct Universal {
         uint256 number;
         uint256 instances;
+        uint256 activeParticulars;
+        uint256 tokenId;
+        // bool made;
         uint256[] primes;
-        bool made;
-        // uint256[] allInstances; // entries are tokenIds
-        // Factorisation factorisation;
-        // uint256[] primeFactors;
-        // uint256[] powers;
     }
 
     /*
@@ -199,18 +197,26 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     // (4) Multiplication, then the generatingNumber is an array of the multiplying numbers;
 
     struct Metadata {
-        Universal universal;
+        uint256 number;
+        // Universal universal;
         uint256 mintTime;
         uint256 order; // records which instance of a universal a token is
         string method;
         uint256[2] generatingTokenIds;
     }
 
-    mapping(uint256 => Metadata) public tokenId_to_metadata; // looks at the token"s metadata
-    mapping(uint256 => Universal) public num_to_universal; //
-    mapping(uint256 => uint256) public universal_to_tokenId;
+    // maps a
+    mapping(uint256 => mapping(uint256 => uint256))
+        public num_to_particularsList; // this maps a number to its own list of particulars, which is itself is a mapping from orders to tokenIds
 
-    mapping(uint256 => uint256) public tokenId_to_balances;
+    mapping(uint256 => mapping(uint256 => bool))
+        public num_to_activeParticularsList; // this maps a number to its own list of active particulars, which itself a mapping from tokenIds to bools
+
+    mapping(uint256 => Metadata) public tokenId_to_metadata; // this is where metadata of a token is stored
+    mapping(uint256 => Universal) public num_to_universal; //  this is where Universals are stored
+    // mapping(uint256 => uint256) public universal_to_tokenId; // this gives you quick access to the tokenIds of universals
+
+    mapping(uint256 => uint256) public tokenId_to_balances; // this maps tokenId to balances
     mapping(uint256 => bool) public tokenId_active;
 
     function Time() public view returns (uint256 timeCreated) {
@@ -219,14 +225,15 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     }
 
     function isUniversal(uint256 tokenId) public view returns (bool) {
-        return (universal_to_tokenId[
-            tokenId_to_metadata[tokenId].universal.number
-        ] == tokenId);
+        return (num_to_universal[tokenId_to_metadata[tokenId].number].tokenId ==
+            tokenId);
+        // return (universal_to_tokenId[tokenId_to_metadata[tokenId].number] ==
+        //     tokenId);
     }
 
     function universalExists(uint256 num) public view returns (bool) {
         Universal memory universal = num_to_universal[num];
-        return (universal.made);
+        return (universal.tokenId != 0);
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////
@@ -242,7 +249,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     mapping(uint256 => uint256) public universal_to_multiplicationTax; // in gwei
     mapping(uint256 => uint256) public universal_to_exponentiationTax; // in gwei
     mapping(uint256 => uint256) public universal_to_subtractionTax; // in gwei
-    mapping(uint256 => uint256) public universalToBalance;
+
+    // mapping(uint256 => uint256) public universalToBalance;
 
     function setCut(uint256 bp) public onlyOwner {
         // cut is applied to all
@@ -288,14 +296,16 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         if (isUniversal(tokenId)) {
             revert UniversalPretendingToBeUniversal();
         }
+        uint256 num = tokenId_to_metadata[tokenId].number;
+
         (bool success, ) = payable(msg.sender).call{
             value: tokenId_to_balances[tokenId]
         }("");
         require(success, 'the withdrawal didn"t go through');
         if (success) {
-            tokenId_active[tokenId] = false;
             tokenId_to_balances[tokenId] == 0;
-            activeParticulars -= 1;
+            num_to_activeParticularsList[num][tokenId] = false;
+            num_to_universal[num].activeParticulars -= 1;
         }
     }
 
@@ -304,8 +314,11 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         address maker,
         string memory method
     ) public returns (uint256 amount) {
-        address owner = _ownerOf[universal_to_tokenId[targetNum]];
+        address owner = _ownerOf[num_to_universal[targetNum].tokenId];
+        // address owner = _ownerOf[universal_to_tokenId[targetNum]];
 
+        // if owner == address(0) then it means a Universal is being minted
+        // if maker == owner then it means it's the owner himself minting
         if (owner == address(0) || maker == owner) {
             return 0;
         } else {
@@ -347,13 +360,14 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         uint256 tokenId1,
         uint256 tokenId2
     ) public nonReentrant {
-        address universalOwner = ownerOf(universal_to_tokenId[num]);
+        uint256 universal_tokenId = num_to_universal[num].tokenId;
+        address universalOwner = ownerOf(universal_tokenId);
 
         if (msg.sender != universalOwner) {
             revert NotOwnerOfUniversal();
         }
         require(
-            universalToBalance[num] > 0,
+            tokenId_to_balances[universal_tokenId] > 0,
             'there"s no money for you withdraw!'
         );
 
@@ -362,20 +376,20 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         }
 
         require(
-            tokenId_to_metadata[tokenId1].universal.number != 1,
+            tokenId_to_metadata[tokenId1].number != 1,
             "Cheeky! 1 is coprime with everything yes, but not allowed for our purposes!"
         );
         require(
-            tokenId_to_metadata[tokenId2].universal.number != 1,
+            tokenId_to_metadata[tokenId2].number != 1,
             "Cheeky! 1 is coprime with everything yes, but not allowed for our purposes!"
         );
 
         if (
-            !areCoprime(num, tokenId_to_metadata[tokenId1].universal.number) ||
-            !areCoprime(num, tokenId_to_metadata[tokenId2].universal.number) ||
+            !areCoprime(num, tokenId_to_metadata[tokenId1].number) ||
+            !areCoprime(num, tokenId_to_metadata[tokenId2].number) ||
             !areCoprime(
-                tokenId_to_metadata[tokenId1].universal.number,
-                tokenId_to_metadata[tokenId2].universal.number
+                tokenId_to_metadata[tokenId1].number,
+                tokenId_to_metadata[tokenId2].number
             )
         ) {
             revert NotCoprime();
@@ -386,11 +400,11 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         // Note that universal taxes are set in absolute amounts, not basis points.
 
         (bool success, ) = payable(universalOwner).call{
-            value: universalToBalance[num]
+            value: tokenId_to_balances[universal_tokenId]
         }("");
         require(success, 'it didn"t go through');
         if (success) {
-            universalToBalance[num] = 0;
+            tokenId_to_balances[universal_tokenId] = 0;
         }
     }
 
@@ -415,7 +429,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         uint256 tokenId, // in 1000000000000 wei (10000 gwei)
         uint256 amount // in gwei
     ) public {
-        if (msg.sender != ownerOf(universal_to_tokenId[num])) {
+        if (msg.sender != ownerOf(num_to_universal[num].tokenId)) {
             revert NotOwnerOfUniversal();
         }
         if (amount < 0) {
@@ -428,11 +442,11 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         }
 
         require(
-            tokenId_to_metadata[tokenId].universal.number != 1,
+            tokenId_to_metadata[tokenId].number != 1,
             "Cheeky! 1 is coprime with everything yes, but not allowed for our purposes!"
         );
 
-        if (!areCoprime(num, tokenId_to_metadata[tokenId].universal.number)) {
+        if (!areCoprime(num, tokenId_to_metadata[tokenId].number)) {
             revert NotCoprime();
         }
         _burn(tokenId);
@@ -444,7 +458,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
 
     modifier onlyOwnerOfUniversal(uint256 num) {
         require(
-            msg.sender == ownerOf(universal_to_tokenId[num]),
+            msg.sender == ownerOf(num_to_universal[num].tokenId),
             "Not owner of universal"
         );
         _;
@@ -465,8 +479,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         notBurningAUniversal(tokenId1)
         notBurningAUniversal(tokenId2)
     {
-        uint256 n1 = tokenId_to_metadata[tokenId1].universal.number;
-        uint256 n2 = tokenId_to_metadata[tokenId2].universal.number;
+        uint256 n1 = tokenId_to_metadata[tokenId1].number;
+        uint256 n2 = tokenId_to_metadata[tokenId2].number;
         universal_to_additionTax[num] = (n1 + n2) * 1000000000000; //
         _burn(tokenId1);
         _burn(tokenId2);
@@ -482,8 +496,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         notBurningAUniversal(tokenId1)
         notBurningAUniversal(tokenId2)
     {
-        uint256 n1 = tokenId_to_metadata[tokenId1].universal.number;
-        uint256 n2 = tokenId_to_metadata[tokenId2].universal.number;
+        uint256 n1 = tokenId_to_metadata[tokenId1].number;
+        uint256 n2 = tokenId_to_metadata[tokenId2].number;
         universal_to_multiplicationTax[num] = (n1 * n2) * 1000000000000; //
         _burn(tokenId1);
         _burn(tokenId2);
@@ -499,8 +513,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         notBurningAUniversal(tokenId1)
         notBurningAUniversal(tokenId2)
     {
-        uint256 n1 = tokenId_to_metadata[tokenId1].universal.number;
-        uint256 n2 = tokenId_to_metadata[tokenId2].universal.number;
+        uint256 n1 = tokenId_to_metadata[tokenId1].number;
+        uint256 n2 = tokenId_to_metadata[tokenId2].number;
         universal_to_exponentiationTax[num] = (n1 ** n2) * 1000000000000; //
         _burn(tokenId1);
         _burn(tokenId2);
@@ -516,12 +530,19 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         notBurningAUniversal(tokenId1)
         notBurningAUniversal(tokenId2)
     {
-        uint256 n1 = tokenId_to_metadata[tokenId1].universal.number;
-        uint256 n2 = tokenId_to_metadata[tokenId2].universal.number;
+        uint256 n1 = tokenId_to_metadata[tokenId1].number;
+        uint256 n2 = tokenId_to_metadata[tokenId2].number;
         require(n1 > n2, "Tax cannot be negative");
         universal_to_exponentiationTax[num] = (n1 - n2) * 1000000000000; //
         _burn(tokenId1);
         _burn(tokenId2);
+    }
+
+    function getPrimesFromNum(
+        uint256 num
+    ) public view returns (uint256[] memory primes) {
+        uint256[] memory primes = num_to_universal[num].primes;
+        return primes;
     }
 
     function composeMetadata(
@@ -531,35 +552,34 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         uint256 tokenId
     ) internal {
         if (!universalExists(targetNum)) {
-            // you can also use the following line to check if the number exists
-
-            Universal storage x = num_to_universal[targetNum];
-
-            x.number = targetNum;
-            x.instances = 1;
-            x.primes = factorise(targetNum);
-            x.made = true;
-            // for (uint256 i = 0; i < x.primes.length; i++) {
-            //     if (x.primes[i] != 0) {
-            //         // console.log("Factor", i, ":", x.primes[i]);
-            //     }
-            // }
-
+            uint256[] memory primes = factorise(targetNum);
+            num_to_universal[targetNum] = Universal(
+                targetNum,
+                1,
+                0,
+                tokenId,
+                // true,
+                primes
+            );
             tokenId_to_metadata[tokenId] = Metadata(
-                x,
+                targetNum,
                 Time(),
                 1,
                 method,
                 generatingNumbers
             );
-            universal_to_tokenId[targetNum] = tokenId;
+            // universal_to_tokenId[targetNum] = tokenId;
         } else {
             uint256 instances = getInstances(targetNum);
-            num_to_universal[targetNum].instances = instances + 1;
+            num_to_universal[targetNum].instances += 1;
+            num_to_universal[targetNum].activeParticulars += 1;
             uint256 order = instances + 1;
+            num_to_particularsList[targetNum][order] = tokenId;
+            num_to_activeParticularsList[targetNum][tokenId] = true;
+
             uint256 mintTime = Time();
             tokenId_to_metadata[tokenId] = Metadata(
-                num_to_universal[targetNum],
+                targetNum,
                 mintTime,
                 order,
                 method,
@@ -613,21 +633,36 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
             revert UnableToRefund();
         } else {
             currentId = currentId + 1;
-            // recall that universal taxes are set as whole numbers, not percentages
-            universalToBalance[targetNum] += (tax * (1000000 - cut)) / 1000000;
-
-            for (uint256 i = 0; i < currentId; i++) {
-                if (tokenId_active[i] && !isUniversal(i)) {
-                    tokenId_to_balances[i] +=
-                        (tax * cut * 80) /
-                        (100 * 1000000 * activeParticulars); // 80% of the cut goes to previous particular holders; 20% goes to the treasury
-                }
-            }
-            tokenId_active[currentId] = true;
-            activeParticulars += 1;
-
-            treasuryBalance += (tax * cut * 20) / (100 * 1000000);
             composeMetadata(targetNum, method, generatingTokenIds, currentId);
+            // recall that universal taxes are set as whole numbers, not percentages
+            uint256 universal_tokenId = num_to_universal[targetNum].tokenId;
+            // uint256 universal_tokenId = universal_to_tokenId[targetNum];
+            tokenId_to_balances[universal_tokenId] +=
+                (tax * (1000000 - cut)) /
+                1000000;
+            // universalToBalance[targetNum] += (tax * (1000000 - cut)) / 1000000;
+            uint256 activeParticulars = num_to_universal[targetNum]
+                .activeParticulars;
+            if (activeParticulars != 0) {
+                uint256 distribute_to_active_particulars = (tax * cut * 80) /
+                    (100 * 1000000 * activeParticulars); // 80% of the cut goes to previous particular holders; 20% goes to the treasury
+                // looping over the active particulars
+                for (uint256 i = 0; i < activeParticulars; i++) {
+                    if (num_to_activeParticularsList[targetNum][i] == true) {
+                        uint256 ith_particular = i;
+                        tokenId_to_balances[
+                            ith_particular
+                        ] += distribute_to_active_particulars;
+                    }
+                    // uint256 ith_particular = num_to_activeParticularsList[
+                    //     targetNum
+                    // ][i];
+                }
+                num_to_activeParticularsList[targetNum][currentId] = true;
+
+                num_to_universal[targetNum].activeParticulars += 1;
+            }
+            treasuryBalance += (tax * cut * 20) / (100 * 1000000);
 
             _safeMint(maker, currentId);
 
@@ -827,9 +862,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
             uint256 n,
             string memory method,
             uint256[2] memory generatingNumbers
-        ) = makeNumBySuccession(
-                tokenId_to_metadata[oldTokenId].universal.number
-            );
+        ) = makeNumBySuccession(tokenId_to_metadata[oldTokenId].number);
 
         newTokenId = mintNumber(
             msg.sender,
@@ -883,8 +916,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
             string memory method,
             uint256[2] memory generatingNumbers
         ) = makeNumByAddition(
-                tokenId_to_metadata[oldTokenId1].universal.number,
-                tokenId_to_metadata[oldTokenId2].universal.number
+                tokenId_to_metadata[oldTokenId1].number,
+                tokenId_to_metadata[oldTokenId2].number
             );
 
         newTokenId = mintNumber(
@@ -922,8 +955,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
             string memory method,
             uint256[2] memory generatingNumbers
         ) = makeNumByMultiplication(
-                tokenId_to_metadata[oldTokenId1].universal.number,
-                tokenId_to_metadata[oldTokenId2].universal.number
+                tokenId_to_metadata[oldTokenId1].number,
+                tokenId_to_metadata[oldTokenId2].number
             );
 
         newTokenId = mintNumber(
@@ -959,8 +992,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
             string memory method,
             uint256[2] memory generatingNumbers
         ) = makeNumByExponentiation(
-                tokenId_to_metadata[oldTokenId1].universal.number,
-                tokenId_to_metadata[oldTokenId2].universal.number
+                tokenId_to_metadata[oldTokenId1].number,
+                tokenId_to_metadata[oldTokenId2].number
             );
 
         newTokenId = mintNumber(
@@ -996,8 +1029,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
             string memory method,
             uint256[2] memory generatingNumbers
         ) = makeNumBySubtraction(
-                tokenId_to_metadata[oldTokenId1].universal.number,
-                tokenId_to_metadata[oldTokenId2].universal.number
+                tokenId_to_metadata[oldTokenId1].number,
+                tokenId_to_metadata[oldTokenId2].number
             );
 
         newTokenId = mintNumber(
@@ -1469,12 +1502,12 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         } else {
             if (isUniversal(tokenId)) {
                 string memory tokenURI = drawUniversal(
-                    tokenId_to_metadata[tokenId].universal.number
+                    tokenId_to_metadata[tokenId].number
                 );
                 return tokenURI;
             } else {
                 string memory tokenURI = drawParticular(
-                    tokenId_to_metadata[tokenId].universal.number
+                    tokenId_to_metadata[tokenId].number
                 );
                 return tokenURI;
             }
