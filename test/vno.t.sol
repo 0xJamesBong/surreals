@@ -59,7 +59,7 @@ contract VNO_Test is SharedFunctions {
     //     return tokenId;
     // }
 
-    function testMakeZero() public {
+    function test_make_zero() public {
         uint256 early = 1900000000;
         uint256 later = 2000000000;
 
@@ -84,7 +84,7 @@ contract VNO_Test is SharedFunctions {
         uint256 aliceInstances = getUniversalFromTokenId(alice_token_id)
             .instances;
 
-        (, uint256 aliceMintTime, uint256 aliceOrder, ) = vno
+        (, uint256 aliceMintTime, uint256 aliceOrder, , , ) = vno
             .tokenId_to_metadata(alice_token_id);
 
         assertEq(aliceNumber, 0);
@@ -115,9 +115,8 @@ contract VNO_Test is SharedFunctions {
 
         uint256 bobNumber = getNumberFromTokenId(bobTokenId);
         uint256 bobInstance = getUniversalFromTokenId(bobTokenId).instances;
-        (, uint256 bobMintTime, uint256 bobOrder, ) = vno.tokenId_to_metadata(
-            bobTokenId
-        );
+        (, uint256 bobMintTime, uint256 bobOrder, , , ) = vno
+            .tokenId_to_metadata(bobTokenId);
 
         assertEq(bobNumber, 0);
         assertEq(bobInstance, 2);
@@ -133,7 +132,7 @@ contract VNO_Test is SharedFunctions {
         console.log("the order was:", bobOrder);
     }
 
-    function testmintBySuccession() public {
+    function test_mint_via_succession() public {
         hoax(alice); // pretend it's alice calling the functions
         uint256 oldAliceBalance = alice.balance; // record alice's old balance
         console.log(oldAliceBalance);
@@ -179,7 +178,7 @@ contract VNO_Test is SharedFunctions {
         assertTrue(getNumberFromTokenId(twoTokenId) == 2); // it should belong to alice
     }
 
-    function testmintByDirect() public {
+    function test_mint_via_direct() public {
         // To test this, you need to make a lot of numbers first
         hoax(alice);
         uint256 zeroTokenId = vno.mintZero();
@@ -230,7 +229,7 @@ contract VNO_Test is SharedFunctions {
         // hoax(bob);
     }
 
-    function testMintViaMultiplication() public {
+    function test_mint_via_multiplication() public {
         // To test this, you need to make a lot of numbers first
 
         assertTrue(!vno.universalExists(0));

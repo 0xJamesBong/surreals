@@ -8,10 +8,12 @@ import "solmate/tokens/ERC721.sol";
 import "solmate/utils/LibString.sol";
 import "forge-std/console.sol";
 import "abdk-libraries-solidity/ABDKMathQuad.sol";
+import "./StringManipulations.sol";
 
 contract VNO is ERC721, Ownable, ReentrancyGuard {
     using LibString for *;
     using ABDKMathQuad for *;
+    using StringManipulations for *;
 
     function _burn(uint256 id) internal override {
         address owner = _ownerOf[id];
@@ -34,123 +36,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     ///@notice id of current ERC721 being minted
     uint256 public currentId;
 
-    address public tax_avoidance_address;
-
-    function set_tax_avoidance_address(
-        address nftCollection
-    ) public onlyOwner returns (bool) {
-        tax_avoidance_address = nftCollection;
-    }
-
-    // Counters.Counter private _tokenIdCounter;
-
     constructor() ERC721("Number", "Num") {}
-
-    //////////////////////////////////////////////////////////////////////////////////////////
-    // String Manipulations
-    ////////////////////////////////////////////////su//////////////////////////////////////////
-
-    function substring(
-        string memory str,
-        uint256 startIndex,
-        uint256 endIndex
-    ) public pure returns (string memory) {
-        bytes memory strBytes = bytes(str);
-        bytes memory result = new bytes(endIndex - startIndex);
-        for (uint256 i = startIndex; i < endIndex; i++) {
-            result[i - startIndex] = strBytes[i];
-        }
-        return string(result);
-    }
-
-    // https://ethereum.stackexchange.com/questions/13862/is-it-possible-to-check-string-variables-length-inside-the-contract
-    function utfStringLength(
-        string memory str
-    ) public pure returns (uint256 length) {
-        uint256 i = 0;
-        bytes memory string_rep = bytes(str);
-
-        while (i < string_rep.length) {
-            if (string_rep[i] >> 7 == 0) i += 1;
-            else if (string_rep[i] >> 5 == bytes1(uint8(0x6))) i += 2;
-            else if (string_rep[i] >> 4 == bytes1(uint8(0xE))) i += 3;
-            else if (string_rep[i] >> 3 == bytes1(uint8(0x1E)))
-                i += 4;
-                //For safety
-            else i += 1;
-            length++;
-        }
-    }
-
-    function isNestedString(
-        string memory where
-    ) public pure returns (bool, uint256 numL, uint256 numR) {
-        // https://ethereum.stackexchange.com/questions/69307/find-word-in-string-solidity
-        bytes memory whereBytes = bytes(where);
-        bool legal = true;
-        uint256 numL = 0;
-        uint256 numR = 0;
-        for (uint256 i = 0; i <= whereBytes.length - 1; i++) {
-            bool flag = false;
-            // recording the number of left and right brackets
-            if (whereBytes[i] == "{") {
-                numL += 1;
-            } else if (whereBytes[i] == "}") {
-                numR += 1;
-            }
-            if (whereBytes[i] != "{" && whereBytes[i] != "}") {
-                flag = true;
-            }
-
-            if (
-                i + 1 != whereBytes.length &&
-                whereBytes[i] == "}" &&
-                whereBytes[i + 1] == "{"
-            ) {
-                flag = true;
-            }
-            // if any one flag is raised, break loop
-            if (flag) {
-                legal = false;
-                break;
-            }
-        }
-        if (numL != numR) {
-            legal = false;
-        }
-        return (legal, numL, numR);
-    }
-
-    function stringsEq(
-        string memory nestedSet1,
-        string memory nestedSet2
-    ) public pure returns (bool) {
-        bytes32 compareNestedSet1 = keccak256(abi.encodePacked(nestedSet1));
-        bytes32 compareNestedSet2 = keccak256(abi.encodePacked(nestedSet2));
-        return (compareNestedSet1 == compareNestedSet2);
-    }
-
-    function isSubstring(
-        string memory nestedSet1,
-        string memory nestedSet2
-    ) public pure returns (bool) {
-        // Only determines if nestedSet 1 is a substring of nestedSet2
-        // I don"t care about the other way around
-        // proper substrings only
-        // This function relies on the fact that we have already checked they"re legal strings
-        // Which enables the iff that isSubstring(nestedSet1, nestedSet2) == true iff nestedSet1 < nestedSet2 as numbers.
-        (bool isNestedString1, , ) = isNestedString(nestedSet1);
-        (bool isNestedString2, , ) = isNestedString(nestedSet2);
-        require(
-            isNestedString1 == true,
-            "nestedSet1 is not legal nested substring"
-        );
-        require(
-            isNestedString2 == true,
-            "nestedSet2 is not legal nested substring"
-        );
-        return (utfStringLength(nestedSet1) < utfStringLength(nestedSet2));
-    }
 
     //////////////////////////////////////////////////////////////////////////////////////////
     // The VNO
@@ -175,7 +61,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         uint256 instances;
         uint256 activeParticulars;
         uint256 tokenId;
-        // bool made;
         uint256[] primes;
     }
 
@@ -198,11 +83,12 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
 
     struct Metadata {
         uint256 number;
-        // Universal universal;
         uint256 mintTime;
         uint256 order; // records which instance of a universal a token is
         string method;
-        uint256[2] generatingTokenIds;
+        uint256 generatingTokenId1;
+        uint256 generatingTokenId2;
+        // uint256[2] generatingTokenIds;
     }
 
     // maps a
@@ -214,7 +100,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
 
     mapping(uint256 => Metadata) public tokenId_to_metadata; // this is where metadata of a token is stored
     mapping(uint256 => Universal) public num_to_universal; //  this is where Universals are stored
-    // mapping(uint256 => uint256) public universal_to_tokenId; // this gives you quick access to the tokenIds of universals
 
     mapping(uint256 => uint256) public tokenId_to_balances; // this maps tokenId to balances
     mapping(uint256 => bool) public tokenId_active;
@@ -227,8 +112,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     function isUniversal(uint256 tokenId) public view returns (bool) {
         return (num_to_universal[tokenId_to_metadata[tokenId].number].tokenId ==
             tokenId);
-        // return (universal_to_tokenId[tokenId_to_metadata[tokenId].number] ==
-        //     tokenId);
     }
 
     function universalExists(uint256 num) public view returns (bool) {
@@ -322,17 +205,21 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         if (owner == address(0) || maker == owner) {
             return 0;
         } else {
-            if (stringsEq(method, "succession")) {
+            if (StringManipulations.stringsEq(method, "succession")) {
                 return mintBySuccessionFee;
-            } else if (stringsEq(method, "addition")) {
+            } else if (StringManipulations.stringsEq(method, "addition")) {
                 return universal_to_additionTax[targetNum];
-            } else if (stringsEq(method, "multiplication")) {
+            } else if (
+                StringManipulations.stringsEq(method, "multiplication")
+            ) {
                 return universal_to_multiplicationTax[targetNum];
-            } else if (stringsEq(method, "direct")) {
+            } else if (StringManipulations.stringsEq(method, "direct")) {
                 return universal_to_tax[targetNum];
-            } else if (stringsEq(method, "exponentiation")) {
+            } else if (
+                StringManipulations.stringsEq(method, "exponentiation")
+            ) {
                 return universal_to_exponentiationTax[targetNum];
-            } else if (stringsEq(method, "subtraction")) {
+            } else if (StringManipulations.stringsEq(method, "subtraction")) {
                 return universal_to_subtractionTax[targetNum];
             }
         }
@@ -548,7 +435,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     function composeMetadata(
         uint256 targetNum,
         string memory method,
-        uint256[2] memory generatingNumbers,
+        uint256 generatingTokenId1,
+        uint256 generatingTokenId2,
         uint256 tokenId
     ) internal {
         if (!universalExists(targetNum)) {
@@ -566,7 +454,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
                 Time(),
                 1,
                 method,
-                generatingNumbers
+                generatingTokenId1,
+                generatingTokenId2
             );
             // universal_to_tokenId[targetNum] = tokenId;
         } else {
@@ -583,7 +472,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
                 mintTime,
                 order,
                 method,
-                generatingNumbers
+                generatingTokenId1,
+                generatingTokenId2
             );
         }
     }
@@ -603,9 +493,9 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     function mintNumber(
         address maker,
         uint256 targetNum,
-        // string memory targetNumNestedString,
         string memory method,
-        uint256[2] memory generatingTokenIds,
+        uint256 generatingTokenId1,
+        uint256 generatingTokenId2,
         uint256 fee
     ) public nonReentrant returns (uint256 newTokenId) {
         // require(
@@ -633,7 +523,13 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
             revert UnableToRefund();
         } else {
             currentId = currentId + 1;
-            composeMetadata(targetNum, method, generatingTokenIds, currentId);
+            composeMetadata(
+                targetNum,
+                method,
+                generatingTokenId1,
+                generatingTokenId2,
+                currentId
+            );
             // recall that universal taxes are set as whole numbers, not percentages
             uint256 universal_tokenId = num_to_universal[targetNum].tokenId;
             // uint256 universal_tokenId = universal_to_tokenId[targetNum];
@@ -670,148 +566,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         }
     }
 
-    // Number making
-
     error NoNegativeNumbers();
-
-    function makeNumZero()
-        public
-        pure
-        returns (
-            uint256,
-            string memory method,
-            uint256[2] memory generatingTokenIds
-        )
-    {
-        string memory emptyset = "{}";
-        string memory method = "genesis";
-        uint256[2] memory generatingTokenIds;
-        return (0, method, generatingTokenIds);
-    }
-
-    function makeNumBySuccession(
-        uint256 n
-    )
-        public
-        view
-        returns (
-            uint256 sucessor,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        )
-    {
-        sucessor = n + 1;
-        string memory method = "succession";
-        uint256[2] memory generatingNumbers;
-        generatingNumbers[0] = n;
-        return (sucessor, method, generatingNumbers);
-    }
-
-    function makeNumByDirect(
-        uint256 _n
-    )
-        public
-        view
-        returns (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        )
-    {
-        n = _n;
-        string memory method = "direct";
-        uint256[2] memory generatingNumbers;
-        generatingNumbers[0] = n;
-
-        return (n, method, generatingNumbers);
-    }
-
-    function makeNumByAddition(
-        uint256 n1,
-        uint256 n2
-    )
-        public
-        view
-        returns (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        )
-    {
-        n = n1 + n2;
-        string memory method = "addition";
-        uint256[2] memory generatingNumbers;
-        generatingNumbers[0] = n1;
-        generatingNumbers[1] = n2;
-        return (n, method, generatingNumbers);
-    }
-
-    function makeNumByMultiplication(
-        uint256 n1,
-        uint256 n2
-    )
-        public
-        view
-        returns (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        )
-    {
-        n = n1 * n2;
-        string memory method = "multiplication";
-        uint256[2] memory generatingNumbers;
-        generatingNumbers[0] = n1;
-        generatingNumbers[1] = n2;
-        return (n, method, generatingNumbers);
-    }
-
-    function makeNumByExponentiation(
-        uint256 n1,
-        uint256 n2
-    )
-        public
-        view
-        returns (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingTokenIds
-        )
-    {
-        n = n1 ** n2;
-
-        string memory method = "exponentiation";
-
-        generatingTokenIds[0] = n1;
-        generatingTokenIds[1] = n2;
-        return (n, method, generatingTokenIds);
-    }
-
-    function makeNumBySubtraction(
-        uint256 n1,
-        uint256 n2
-    )
-        public
-        view
-        returns (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        )
-    {
-        if (n1 < n2) {
-            revert NoNegativeNumbers();
-        }
-        int256 _n = int(n1) - int(n2);
-        console.log(uint256(_n), "look here at subtraction!");
-
-        n = uint256(_n);
-        string memory method = "subtraction";
-        uint256[2] memory generatingNumbers;
-        generatingNumbers[0] = n1;
-        generatingNumbers[1] = n2;
-        return (n, method, generatingNumbers);
-    }
 
     error notOwnerOftheToken();
 
@@ -819,25 +574,14 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     // Minting Functionality
     //////////////////////////////////////////////////////////////////////////////////////////
 
-    function mintZero()
-        public
-        payable
-        returns (
-            // address maker
-            uint256 newTokenId
-        )
-    {
-        (
-            ,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        ) = makeNumZero();
-
+    function mintZero() public payable returns (uint256 newTokenId) {
+        uint256[2] memory generatingNumbers;
         uint256 newTokenId = mintNumber(
             msg.sender,
             0,
-            method,
-            generatingNumbers,
+            "genesis",
+            0,
+            0,
             msg.value
         );
 
@@ -845,7 +589,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     }
 
     function mintBySuccession(
-        // address maker,
         uint256 oldTokenId
     ) public payable returns (uint256 newTokenId) {
         // checks if num is new, if new, increases its order to 1 (first!)
@@ -854,21 +597,14 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         if (ownerOf(oldTokenId) != msg.sender) {
             revert notOwnerOftheToken();
         }
-        // require(
-        //     ownerOf(oldTokenId) == maker,
-        //     'you don"t own the token you"re making the successor of'
-        // );
-        (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        ) = makeNumBySuccession(tokenId_to_metadata[oldTokenId].number);
+        uint256 n = tokenId_to_metadata[oldTokenId].number;
 
         newTokenId = mintNumber(
             msg.sender,
-            n,
-            method,
-            generatingNumbers,
+            n + 1,
+            "succession",
+            oldTokenId,
+            0,
             msg.value
         );
 
@@ -876,32 +612,25 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     }
 
     function mintByDirect(
-        // address maker,
         uint256 num
     ) public payable returns (uint256 newTokenId) {
         require(
             universalExists(num) == true,
             "the universal of the predecessor has not been made yet"
         );
-
-        (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        ) = makeNumByDirect(num);
-
+        uint256 universalTokenId = num_to_universal[num].tokenId;
         newTokenId = mintNumber(
             msg.sender,
-            n,
-            method,
-            generatingNumbers,
+            num,
+            "direct",
+            universalTokenId,
+            0,
             msg.value
         );
         return newTokenId;
     }
 
     function mintByAddition(
-        // address maker,
         uint256 oldTokenId1,
         uint256 oldTokenId2
     ) public payable returns (uint256 newTokenId) {
@@ -910,21 +639,15 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
                 (ownerOf(oldTokenId2) == msg.sender)),
             'you don"t own the tokens you"re adding'
         );
-
-        (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        ) = makeNumByAddition(
-                tokenId_to_metadata[oldTokenId1].number,
-                tokenId_to_metadata[oldTokenId2].number
-            );
+        uint256 n1 = tokenId_to_metadata[oldTokenId1].number;
+        uint256 n2 = tokenId_to_metadata[oldTokenId2].number;
 
         newTokenId = mintNumber(
             msg.sender,
-            n,
-            method,
-            generatingNumbers,
+            n1 + n2,
+            "addition",
+            oldTokenId1,
+            oldTokenId2,
             msg.value
         );
         require(ownerOf(newTokenId) == msg.sender, "not minted");
@@ -940,7 +663,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     }
 
     function mintByMultiplication(
-        // address maker,
         uint256 oldTokenId1,
         uint256 oldTokenId2
     ) public payable returns (uint256 newTokenId) {
@@ -949,21 +671,15 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
                 (ownerOf(oldTokenId2) == msg.sender)),
             'you don"t own the tokens you"re multiplying'
         );
-
-        (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        ) = makeNumByMultiplication(
-                tokenId_to_metadata[oldTokenId1].number,
-                tokenId_to_metadata[oldTokenId2].number
-            );
+        uint256 n1 = tokenId_to_metadata[oldTokenId1].number;
+        uint256 n2 = tokenId_to_metadata[oldTokenId2].number;
 
         newTokenId = mintNumber(
             msg.sender,
-            n,
-            method,
-            generatingNumbers,
+            n1 * n2,
+            "multiplication",
+            oldTokenId1,
+            oldTokenId2,
             msg.value
         );
         require(ownerOf(newTokenId) == msg.sender, "not minted");
@@ -977,7 +693,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     }
 
     function mintByExponentiation(
-        // address maker,
         uint256 oldTokenId1,
         uint256 oldTokenId2
     ) public payable returns (uint256 newTokenId) {
@@ -987,20 +702,18 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
             "you don't own the tokens you're exponentiating"
         );
 
-        (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        ) = makeNumByExponentiation(
-                tokenId_to_metadata[oldTokenId1].number,
-                tokenId_to_metadata[oldTokenId2].number
-            );
+        uint256 n1 = tokenId_to_metadata[oldTokenId1].number;
+        uint256 n2 = tokenId_to_metadata[oldTokenId2].number;
+        uint256[2] memory generatingNumbers;
+        generatingNumbers[0] = n1;
+        generatingNumbers[1] = n2;
 
         newTokenId = mintNumber(
             msg.sender,
-            n,
-            method,
-            generatingNumbers,
+            n1 ** n2,
+            "exponentiation",
+            oldTokenId1,
+            oldTokenId2,
             msg.value
         );
         require(ownerOf(newTokenId) == msg.sender, "not minted");
@@ -1014,7 +727,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     }
 
     function mintBySubtraction(
-        // address maker,
         uint256 oldTokenId1,
         uint256 oldTokenId2
     ) public payable returns (uint256 newTokenId) {
@@ -1023,23 +735,28 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
                 (ownerOf(oldTokenId2) == msg.sender)),
             "you don't own the tokens you're subtracting"
         );
+        uint256 n1 = tokenId_to_metadata[oldTokenId1].number;
+        uint256 n2 = tokenId_to_metadata[oldTokenId2].number;
 
-        (
-            uint256 n,
-            string memory method,
-            uint256[2] memory generatingNumbers
-        ) = makeNumBySubtraction(
-                tokenId_to_metadata[oldTokenId1].number,
-                tokenId_to_metadata[oldTokenId2].number
-            );
+        if (n1 < n2) {
+            revert NoNegativeNumbers();
+        }
+        int256 _n = int(n1) - int(n2);
+        console.log(uint256(_n), "look here at subtraction!");
+        uint256 n = uint256(_n);
+        uint256[2] memory generatingNumbers;
+        generatingNumbers[0] = n1;
+        generatingNumbers[1] = n2;
 
         newTokenId = mintNumber(
             msg.sender,
             n,
-            method,
-            generatingNumbers,
+            "subtraction",
+            oldTokenId1,
+            oldTokenId2,
             msg.value
         );
+
         require(ownerOf(newTokenId) == msg.sender, "not minted");
         if (!isUniversal(oldTokenId1)) {
             _burn(oldTokenId1);
@@ -1121,22 +838,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
                 "</g>"
             );
     }
-
-    // function scale(
-    //     uint256 up,
-    //     uint256 down,
-    //     bytes memory image
-    // ) public view returns (bytes memory scaled) {
-    //     bytes memory head = abi.encodePacked(
-    //         "<g transform='translate(",
-    //         divReturnDecimal((down - up) * 5000, down),
-    //         "), scale(",
-    //         divReturnDecimal(up, down),
-    //         ")'>"
-    //     );
-    //     bytes memory tail = "</g>";
-    //     return abi.encodePacked(head, image, tail);
-    // }
 
     function scale(
         uint256 up,
@@ -1279,7 +980,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         uint256 num
     ) public view returns (string memory image) {
         string memory num_str = num.toString();
-        uint256 length = utfStringLength(num_str);
+        uint256 length = StringManipulations.utfStringLength(num_str);
 
         uint256 fontSize = 1000;
         if (length <= 10) {
@@ -1291,8 +992,12 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         } else if (length <= 40) {
             fontSize = 400;
         } else {
-            string memory first = substring(num_str, 0, 9);
-            string memory last = substring(num_str, length - 9, length);
+            string memory first = StringManipulations.substring(num_str, 0, 9);
+            string memory last = StringManipulations.substring(
+                num_str,
+                length - 9,
+                length
+            );
             return (
                 wrapCanvas(
                     abi.encodePacked(
@@ -1361,8 +1066,8 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
                 ? 0
                 : (
                     (_x % 10 == 0 && _y % 10 == 0)
-                        ? utfStringLength(_y.toString()) -
-                            utfStringLength(_x.toString())
+                        ? StringManipulations.utfStringLength(_y.toString()) -
+                            StringManipulations.utfStringLength(_x.toString())
                         : 0
                 )
         );
@@ -1387,28 +1092,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         );
         return decimal;
     }
-
-    // function isUniversalEmpty(uint256 num) public view returns (bool) {
-    //     Universal memory universal = num_to_universal[num];
-    //     if (bytes(universal.nestedString).length > 0) {
-    //         // The nested string is not empty
-    //         return false;
-    //     }
-    //     if (universal.number != 0) {
-    //         // The number is not zero
-    //         return false;
-    //     }
-    //     if (universal.instances != 0) {
-    //         // The instances is not zero
-    //         return false;
-    //     }
-    //     if (universal.primes.length > 0) {
-    //         // The primes array is not empty
-    //         return false;
-    //     }
-    //     // All fields are empty
-    //     return true;
-    // }
 
     function factorise(uint256 num) public view returns (uint256[] memory) {
         if (num <= 1) {

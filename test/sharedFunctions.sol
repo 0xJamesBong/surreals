@@ -72,7 +72,9 @@ contract SharedFunctions is Test {
             uint256 number,
             uint256 mintTime,
             uint256 order,
-            string memory method // Make sure to remove the extra component
+            string memory method, // Make sure to remove the extra component
+            uint256 oldTokenId1,
+            uint256 oldTokenId2
         ) = vno.tokenId_to_metadata(tokenId);
 
         (
