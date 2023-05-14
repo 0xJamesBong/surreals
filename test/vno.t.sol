@@ -10,55 +10,7 @@ import "forge-std/Test.sol";
 import "openzeppelin-contracts/contracts/utils/Strings.sol";
 import {SharedFunctions} from "./sharedFunctions.sol";
 
-// interface CheatCodes {
-//     function startPrank(address) external;
-
-//     function prank(address) external;
-
-//     function deal(address who, uint256 newBalance) external;
-
-//     function addr(uint256 privateKey) external returns (address);
-
-//     function warp(uint256) external; // Set block.timestamp
-// }
-
 contract VNO_Test is SharedFunctions {
-    // VNO vno;
-    // CheatCodes cheats = CheatCodes(HEVM_ADDRESS);
-    // // HEVM_ADDRESS = 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D
-
-    // address alice = cheats.addr(1);
-    // address bob = cheats.addr(2);
-    // address carol = cheats.addr(3);
-    // address dominic = cheats.addr(4);
-    // address owner_of_vno = cheats.addr(5);
-
-    // function setUp() public {
-    //     hoax(owner_of_vno);
-    //     vno = new VNO();
-    // }
-
-    // string emptyset = "{}";
-    // string e = "{}";
-    // string i = "{{}}";
-    // string ii = "{{{}}}";
-    // string iii = "{{{{}}}}";
-    // string v = "{{{{{{}}}}}}";
-    // string vi = "{{{{{{{}}}}}}}";
-    function get_tax_from_universal(
-        uint256 num
-    ) public view returns (uint256 tax) {
-        tax = vno.universal_to_tax(num);
-        return tax;
-    }
-
-    // function get_tokenId_from_universal(
-    //     uint256 num
-    // ) public view returns (uint256 tokenId) {
-    //     tokenId = vno.universal_to_tokenId(num);
-    //     return tokenId;
-    // }
-
     function test_make_zero() public {
         uint256 early = 1900000000;
         uint256 later = 2000000000;
@@ -340,16 +292,16 @@ contract VNO_Test is SharedFunctions {
     }
 
     function test_set_universal_tax() public {
-        uint256 id1 = make_particular(3, alice, bob);
-        uint256 id2 = make_particular(7, alice, bob);
-
-        console.log(getNumberFromTokenId(id1));
-        console.log(getNumberFromTokenId(id2));
-
+        uint256 uid = make_universal(2, alice, alice);
+        console.log("uid is", uid);
+        assertEq(getNumberFromTokenId(uid), 2);
+        assertEq(vno.ownerOf(uid), alice);
         uint256 tax = 7;
 
         hoax(alice);
-        vno.setDirectMintTax(2, id1, tax);
+        vno.setDirectMintTax(2, tax);
+
+        assertEq(get_tax_from_universal(2), tax);
 
         startHoax(carol, 10000000);
         uint256 oldcarolBalance = carol.balance;
@@ -361,43 +313,47 @@ contract VNO_Test is SharedFunctions {
     }
 
     function test_repeatedly_setting_universal_tax() public {
-        uint256 id1 = make_particular(3, alice, bob);
-        uint256 id2 = make_particular(7, alice, bob);
-
-        console.log(getNumberFromTokenId(id1));
-        console.log(getNumberFromTokenId(id2));
+        uint256 uid = make_universal(2, alice, alice);
 
         uint256 tax = 1000;
         console.log(get_tax_from_universal(2));
         hoax(alice);
-        vno.setDirectMintTax(2, id1, tax);
+        vno.setDirectMintTax(2, tax);
         assertEq(get_tax_from_universal(2), tax);
         assertEq(vno.ownerOf(get_tokenId_from_universal(2)), alice);
-        assertTrue(getNumberFromTokenId(3) == 2);
-        assertTrue(vno.isUniversal(3));
+        assertTrue(getNumberFromTokenId(uid) == 2);
+        assertTrue(vno.isUniversal(uid));
+        //
+        hoax(carol, 1 ether);
+        uint256 oldcarolBalance = carol.balance;
+        console.log("carol's old balance is:", oldcarolBalance);
 
-        uint256 id3 = make_particular(3, alice, bob);
-        uint256 id4 = make_particular(7, alice, bob);
+        vno.mintByDirect{value: 1 ether}(2);
+
+        assertEq(carol.balance, oldcarolBalance - tax);
+        console.log("carol's new balance is:", oldcarolBalance);
+        //
         hoax(alice);
-        vno.setDirectMintTax(2, id2, 0);
+        // setting the tax back to 0;
+        vno.setDirectMintTax(2, 0);
         assertEq(get_tax_from_universal(2), 0);
 
-        uint256 id = get_tokenId_from_universal(2);
         hoax(alice);
-        vno.safeTransferFrom(alice, bob, id);
+        // alice transfer the universal to bob
+        vno.safeTransferFrom(alice, bob, uid);
         assertEq(vno.ownerOf(get_tokenId_from_universal(2)), bob);
-        uint256 id5 = make_particular(3, alice, bob);
-        uint256 id6 = make_particular(7, alice, bob);
+
         uint256 new_tax = 900;
         hoax(bob);
-        vno.setDirectMintTax(2, id3, new_tax);
+        vno.setDirectMintTax(2, new_tax);
         assertEq(get_tax_from_universal(2), new_tax);
     }
 
     function test_withdraw_from_universal() public {
-        uint256 uid = make_universal(23, alice, alice);
+        uint256 u = 23;
+        uint256 uid = make_universal(u, alice, alice);
         uint256 id1 = make_particular(3, alice, alice);
-        uint256 id2 = make_particular(7, alice, alice);
+        // uint256 id2 = make_particular(7, alice, alice);
         hoax(alice);
         uint256 id3 = vno.mintByDirect(3);
         console.log(getNumberFromTokenId(id3));
@@ -406,24 +362,56 @@ contract VNO_Test is SharedFunctions {
         assertEq(vno.ownerOf(uid), alice);
         //  alice can set tax
         hoax(alice);
-        vno.setDirectMintTax(23, id1, tax);
+        vno.setDirectMintTax(23, tax);
 
         assertEq(get_tax_from_universal(23), tax);
         // some random dude minting a lot to pay fees to Alice.
         for (uint256 i = 0; i <= 100; i++) {
             hoax(bob);
-            vno.mintByDirect{value: 100 ether}(23);
+            vno.mintByDirect{value: 100 ether}(u);
         }
-        uint256 balance = get_balance_from_universal(23);
+        uint256 balance = get_balance_from_universal(u);
         assertTrue(balance != 0);
         console.log("The balance for the universal 23 is:", balance);
 
         hoax(alice, 10000);
+
         // // alice can withdraw
-        vno.withdrawUniversalOwnerBalance(23, id2, id3);
-        assertTrue(get_balance_from_universal(23) == 0);
+        vno.withdrawFromUniversal(u);
+        assertTrue(get_balance_from_universal(u) == 0);
         assertEq(alice.balance, 10000 + balance);
     }
+
+    // function test_withdraw_from_universal() public {
+    //     uint256 uid = make_universal(23, alice, alice);
+    //     uint256 id1 = make_particular(3, alice, alice);
+    //     uint256 id2 = make_particular(7, alice, alice);
+    //     hoax(alice);
+    //     uint256 id3 = vno.mintByDirect(3);
+    //     console.log(getNumberFromTokenId(id3));
+
+    //     uint256 tax = 1000;
+    //     assertEq(vno.ownerOf(uid), alice);
+    //     //  alice can set tax
+    //     hoax(alice);
+    //     vno.setDirectMintTax(23, id1, tax);
+
+    //     assertEq(get_tax_from_universal(23), tax);
+    //     // some random dude minting a lot to pay fees to Alice.
+    //     for (uint256 i = 0; i <= 100; i++) {
+    //         hoax(bob);
+    //         vno.mintByDirect{value: 100 ether}(23);
+    //     }
+    //     uint256 balance = get_balance_from_universal(23);
+    //     assertTrue(balance != 0);
+    //     console.log("The balance for the universal 23 is:", balance);
+
+    //     hoax(alice, 10000);
+    //     // // alice can withdraw
+    //     vno.withdrawUniversalOwnerBalance(23, id2, id3);
+    //     assertTrue(get_balance_from_universal(23) == 0);
+    //     assertEq(alice.balance, 10000 + balance);
+    // }
 
     //  This tests whether the contract can successfully withdraw funds from a universal wallet and reset the tax after a transfer of ownership. The test function does the following:
 
@@ -441,7 +429,8 @@ contract VNO_Test is SharedFunctions {
     function test_can_withdraw_from_universal_and_reset_tax_after_transfer()
         public
     {
-        uint256 uid = make_universal(23, alice, alice);
+        uint256 u = 23;
+        uint256 uid = make_universal(u, alice, alice);
         hoax(alice);
         uint256 id1 = vno.mintByDirect(3);
         hoax(alice);
@@ -453,24 +442,24 @@ contract VNO_Test is SharedFunctions {
         assertEq(vno.ownerOf(uid), alice);
         //  alice can set tax
         hoax(alice);
-        vno.setDirectMintTax(23, id1, tax);
+        vno.setDirectMintTax(u, tax);
 
-        assertEq(get_tax_from_universal(23), tax);
+        assertEq(get_tax_from_universal(u), tax);
         // some random dude minting a lot to pay fees to Alice.
         for (uint256 i = 0; i <= 100; i++) {
             hoax(bob);
-            vno.mintByDirect{value: 100 ether}(23);
+            vno.mintByDirect{value: 100 ether}(u);
         }
-        uint256 balance = get_balance_from_universal(23);
+        uint256 balance = get_balance_from_universal(u);
         assertTrue(balance != 0);
         console.log("The balance for the universal 23 is:", balance);
 
         hoax(alice);
         // alice can withdraw
-        vno.withdrawUniversalOwnerBalance(23, id2, id3);
+        vno.withdrawFromUniversal(u);
         console.log("Alice withdrawing:", balance);
-        assertTrue(get_balance_from_universal(23) == 0);
-        console.log("Balance left now:", get_balance_from_universal(23));
+        assertTrue(get_balance_from_universal(u) == 0);
+        console.log("Balance left now:", get_balance_from_universal(u));
 
         // suppose alice transfers the token to carol
         hoax(alice);
@@ -486,32 +475,24 @@ contract VNO_Test is SharedFunctions {
 
         uint256 newTax = 200;
         hoax(carol);
-        vno.setDirectMintTax(23, id4, newTax);
-        assertEq(get_tax_from_universal(23), newTax);
+        vno.setDirectMintTax(u, newTax);
+        assertEq(get_tax_from_universal(u), newTax);
 
         // some random dude minting a lot to pay fees to carol
         for (uint256 i = 0; i <= 100; i++) {
             hoax(bob);
-            vno.mintByDirect{value: 100 ether}(23);
+            vno.mintByDirect{value: 100 ether}(u);
         }
-        uint256 newBalance = get_balance_from_universal(23);
+        uint256 newBalance = get_balance_from_universal(u);
         assertTrue(newBalance != 0);
         console.log("The balance for the universal 23 is:", newBalance);
         startHoax(carol, 10000);
         // // carol can withdraw
         console.log("Carol withdrawing:", newBalance);
-        vno.withdrawUniversalOwnerBalance(23, id5, id6);
-        console.log("Balance left now:", get_balance_from_universal(23));
-        assertTrue(get_balance_from_universal(23) == 0);
+        vno.withdrawFromUniversal(u);
+        console.log("Balance left now:", get_balance_from_universal(u));
+        assertTrue(get_balance_from_universal(u) == 0);
         assertEq(carol.balance, 10000 + newBalance);
-    }
-
-    function get_balance_from_universal(
-        uint256 universal
-    ) public view returns (uint256 balance) {
-        uint256 tokenId = get_tokenId_from_universal(universal);
-        balance = vno.tokenId_to_balances(tokenId);
-        return balance;
     }
 
     function test_get_factorisation_from_universal() public {
@@ -599,14 +580,14 @@ contract VNO_Test is SharedFunctions {
         uint256 id_90 = make_particular(90, alice, alice);
         hoax(alice);
         vno.setMintByAdditionTax(12, id_30, id_90);
-        assertEq(vno.universal_to_additionTax(12), (30 + 90) * 1000000000000);
+        assertEq(vno.universal_to_additionTax(12), (30 + 90) * 10000000000000);
         console.log(vno.universal_to_additionTax(12), "mint by addition tax");
 
         uint256 id_5 = make_particular(5, bob, bob);
         uint256 id_7 = make_particular(7, bob, bob);
         hoax(bob);
         uint256 id_12 = vno.mintByAddition{value: 1 ether}(id_5, id_7);
-        assertEq(get_balance_from_universal(12), (30 + 90) * 1000000000000);
+        assertEq(get_balance_from_universal(12), (30 + 90) * 10000000000000);
     }
 
     function test_set_cut() public {
@@ -616,7 +597,7 @@ contract VNO_Test is SharedFunctions {
         uint256 id_90 = make_particular(90, alice, alice);
         hoax(alice);
         vno.setMintByAdditionTax(12, id_30, id_90);
-        assertEq(vno.universal_to_additionTax(12), (30 + 90) * 1000000000000);
+        assertEq(vno.universal_to_additionTax(12), (30 + 90) * 10000000000000);
         console.log(vno.universal_to_additionTax(12), "mint by addition tax");
         hoax(owner_of_vno);
         uint256 cut = 100;
@@ -627,11 +608,12 @@ contract VNO_Test is SharedFunctions {
         uint256 id_12 = vno.mintByAddition{value: 1 ether}(id_5, id_7);
         assertEq(
             get_balance_from_universal(12),
-            ((30 + 90) * 1000000000000 * (1000000 - cut)) / 1000000
+            ((30 + 90) * 10000000000000 * (1000000 - cut)) / 1000000
         );
+
         // assertEq(
         //     vno.treasuryBalance(),
-        //     ((30 + 90) * 1000000000000 * (cut) * 20) / (100 * 1000000)
+        //     ((30 + 90) * 10000000000000 * (cut) * 20) / (100 * 1000000)
         // );
         // for (uint256 i = 0; i < vno.currentId(); i++) {
         //     if (vno.tokenId_active(i) && !vno.isUniversal(i)) {

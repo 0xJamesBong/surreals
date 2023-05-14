@@ -31,7 +31,7 @@ contract Draw_Test is SharedFunctions {
         console.log(drawing);
     }
 
-    function test_drawParticular() public {
+    function test_drawParticular() public view {
         string memory particular = vno.drawParticular(MAX_INT);
         console.log(particular);
     }

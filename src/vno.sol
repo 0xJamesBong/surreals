@@ -2,18 +2,29 @@
 pragma solidity ^0.8.2;
 
 import "openzeppelin-contracts/contracts/access/Ownable.sol";
-import "solmate/utils/ReentrancyGuard.sol";
 import "openzeppelin-contracts/contracts/utils/Strings.sol";
-import "solmate/tokens/ERC721.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/interfaces/IERC20.sol";
+
+import {ERC721} from "solmate/tokens/ERC721.sol";
+import {ReentrancyGuard} from "solmate/utils/ReentrancyGuard.sol";
+import {Owned} from "solmate/auth/Owned.sol";
 import "solmate/utils/LibString.sol";
+
 import "forge-std/console.sol";
 import "abdk-libraries-solidity/ABDKMathQuad.sol";
 import "./StringManipulations.sol";
 
-contract VNO is ERC721, Ownable, ReentrancyGuard {
+// contract VNO is ERC721, Ownable, ReentrancyGuard {
+contract VNO is ERC721, Owned, ReentrancyGuard {
     using LibString for *;
     using ABDKMathQuad for *;
     using StringManipulations for *;
+
+    address public surreals;
+
+    function setSurreals(address surreals_) public onlyOwner {
+        surreals = surreals_;
+    }
 
     function _burn(uint256 id) internal override {
         address owner = _ownerOf[id];
@@ -36,7 +47,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     ///@notice id of current ERC721 being minted
     uint256 public currentId;
 
-    constructor() ERC721("Number", "Num") {}
+    constructor() ERC721("VNO", "VNO") Owned(msg.sender) {}
 
     //////////////////////////////////////////////////////////////////////////////////////////
     // The VNO
@@ -127,7 +138,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     uint256 public paymentToTreasury;
     uint256 public cut;
 
-    mapping(uint256 => uint256) public universal_to_tax; // in gwei
+    mapping(uint256 => uint256) public universal_to_directTax; // in gwei
     mapping(uint256 => uint256) public universal_to_additionTax; // in gwei
     mapping(uint256 => uint256) public universal_to_multiplicationTax; // in gwei
     mapping(uint256 => uint256) public universal_to_exponentiationTax; // in gwei
@@ -205,7 +216,9 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         if (owner == address(0) || maker == owner) {
             return 0;
         } else {
-            if (StringManipulations.stringsEq(method, "succession")) {
+            if (StringManipulations.stringsEq(method, "direct")) {
+                return universal_to_directTax[targetNum];
+            } else if (StringManipulations.stringsEq(method, "succession")) {
                 return mintBySuccessionFee;
             } else if (StringManipulations.stringsEq(method, "addition")) {
                 return universal_to_additionTax[targetNum];
@@ -213,8 +226,6 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
                 StringManipulations.stringsEq(method, "multiplication")
             ) {
                 return universal_to_multiplicationTax[targetNum];
-            } else if (StringManipulations.stringsEq(method, "direct")) {
-                return universal_to_tax[targetNum];
             } else if (
                 StringManipulations.stringsEq(method, "exponentiation")
             ) {
@@ -242,58 +253,203 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
 
     // Fallback function is called when msg.data is not empty
 
-    function withdrawUniversalOwnerBalance(
+    // function withdrawUniversalOwnerBalance(
+    //     uint256 num,
+    //     uint256 tokenId1,
+    //     uint256 tokenId2
+    // ) public nonReentrant {
+    //     uint256 universal_tokenId = num_to_universal[num].tokenId;
+    //     address universalOwner = ownerOf(universal_tokenId);
+
+    //     if (msg.sender != universalOwner) {
+    //         revert NotOwnerOfUniversal();
+    //     }
+    //     require(
+    //         tokenId_to_balances[universal_tokenId] > 0,
+    //         'there"s no money for you withdraw!'
+    //     );
+
+    //     if (isUniversal(tokenId1) || isUniversal(tokenId2)) {
+    //         revert BurningAUniversal();
+    //     }
+
+    //     require(
+    //         tokenId_to_metadata[tokenId1].number != 1,
+    //         "Cheeky! 1 is coprime with everything yes, but not allowed for our purposes!"
+    //     );
+    //     require(
+    //         tokenId_to_metadata[tokenId2].number != 1,
+    //         "Cheeky! 1 is coprime with everything yes, but not allowed for our purposes!"
+    //     );
+
+    //     if (
+    //         !areCoprime(num, tokenId_to_metadata[tokenId1].number) ||
+    //         !areCoprime(num, tokenId_to_metadata[tokenId2].number) ||
+    //         !areCoprime(
+    //             tokenId_to_metadata[tokenId1].number,
+    //             tokenId_to_metadata[tokenId2].number
+    //         )
+    //     ) {
+    //         revert NotCoprime();
+    //     }
+    //     _burn(tokenId1);
+    //     _burn(tokenId2);
+
+    //     // Note that universal taxes are set in absolute amounts, not basis points.
+
+    //     (bool success, ) = payable(universalOwner).call{
+    //         value: tokenId_to_balances[universal_tokenId]
+    //     }("");
+    //     require(success, 'it didn"t go through');
+    //     if (success) {
+    //         tokenId_to_balances[universal_tokenId] = 0;
+    //     }
+    // }
+
+    // this is for all tokens, Universals and Particular
+    mapping(uint256 => address) tokenId_to_address_withdrawal_rights;
+    mapping(uint256 => uint256) tokenId_to_assignment_time_of_withdrawal_rights;
+    mapping(uint256 => uint256) tokenId_to_withdrawal_rights_expiry_time;
+
+    // mapping(uint256 => uint256) tokenId_to_balances;
+
+    function assignUniversalWithdrawalRights(
         uint256 num,
-        uint256 tokenId1,
-        uint256 tokenId2
-    ) public nonReentrant {
-        uint256 universal_tokenId = num_to_universal[num].tokenId;
-        address universalOwner = ownerOf(universal_tokenId);
+        address newRightsHolder,
+        uint256 time
+    ) public onlyUniversalOwner(num) returns (bool success) {
+        uint256 tokenId = num_to_universal[num].tokenId;
+        require(tokenId_to_assignment_time_of_withdrawal_rights[tokenId] == 0);
+        require(tokenId_to_withdrawal_rights_expiry_time[tokenId] == 0);
+        require(time > 0);
 
-        if (msg.sender != universalOwner) {
-            revert NotOwnerOfUniversal();
-        }
+        // needs some good logic governing the circumstances in which you can assign new rights;
+        tokenId_to_address_withdrawal_rights[tokenId] = newRightsHolder;
+        tokenId_to_assignment_time_of_withdrawal_rights[tokenId] = block
+            .timestamp;
+        tokenId_to_withdrawal_rights_expiry_time[tokenId] = time;
+        return true;
+    }
+
+    function revokeUniversalWithdrawalRights(
+        uint256 num
+    ) public onlyUniversalOwner(num) returns (bool success) {
+        uint256 tokenId = num_to_universal[num].tokenId;
         require(
-            tokenId_to_balances[universal_tokenId] > 0,
-            'there"s no money for you withdraw!'
+            block.timestamp -
+                tokenId_to_assignment_time_of_withdrawal_rights[tokenId] >
+                tokenId_to_withdrawal_rights_expiry_time[tokenId]
         );
+        tokenId_to_assignment_time_of_withdrawal_rights[tokenId] = 0;
+        tokenId_to_withdrawal_rights_expiry_time[tokenId] = 0;
+        tokenId_to_address_withdrawal_rights[tokenId] = address(0);
+        return true;
+    }
 
-        if (isUniversal(tokenId1) || isUniversal(tokenId2)) {
-            revert BurningAUniversal();
+    // onlyUniversalRightsHolder(uid)
+    function withdrawFromUniversal(
+        uint256 num // universals use num, particulars use tokenId
+    ) public onlyUniversalRightsHolder(num) returns (bool success) {
+        uint256 uid = num_to_universal[num].tokenId;
+        address rightsHolder = tokenId_to_address_withdrawal_rights[uid];
+        address universalHolder = ownerOf(uid);
+
+        if (rightsHolder == address(0)) {
+            rightsHolder = universalHolder;
         }
 
-        require(
-            tokenId_to_metadata[tokenId1].number != 1,
-            "Cheeky! 1 is coprime with everything yes, but not allowed for our purposes!"
+        (bool _success, ) = rightsHolder.call{value: tokenId_to_balances[uid]}(
+            ""
         );
-        require(
-            tokenId_to_metadata[tokenId2].number != 1,
-            "Cheeky! 1 is coprime with everything yes, but not allowed for our purposes!"
-        );
-
-        if (
-            !areCoprime(num, tokenId_to_metadata[tokenId1].number) ||
-            !areCoprime(num, tokenId_to_metadata[tokenId2].number) ||
-            !areCoprime(
-                tokenId_to_metadata[tokenId1].number,
-                tokenId_to_metadata[tokenId2].number
-            )
-        ) {
-            revert NotCoprime();
-        }
-        _burn(tokenId1);
-        _burn(tokenId2);
-
-        // Note that universal taxes are set in absolute amounts, not basis points.
-
-        (bool success, ) = payable(universalOwner).call{
-            value: tokenId_to_balances[universal_tokenId]
-        }("");
-        require(success, 'it didn"t go through');
-        if (success) {
-            tokenId_to_balances[universal_tokenId] = 0;
+        require(_success, "The withdrawal didn't go through");
+        if (_success) {
+            tokenId_to_balances[uid] = 0;
+            return true;
+        } else {
+            return false;
         }
     }
+
+    modifier onlyUniversalRightsHolder(uint256 num) {
+        uint256 uid = num_to_universal[num].tokenId;
+        address rightsHolder = tokenId_to_address_withdrawal_rights[uid];
+        address universalHolder = ownerOf(uid);
+        if (rightsHolder == address(0)) {
+            rightsHolder = universalHolder;
+        }
+        require(msg.sender == rightsHolder, "Invalid sender");
+
+        _;
+    }
+
+    modifier onlyParticularRightsHolder(uint256 tokenId) {
+        address rightsHolder = tokenId_to_address_withdrawal_rights[tokenId];
+        address particularHolder = ownerOf(tokenId);
+        if (rightsHolder == address(0)) {
+            rightsHolder = particularHolder;
+        }
+        require(msg.sender == particularHolder, "Invalid sender");
+
+        _;
+    }
+
+    // // particular withdrawal rights
+    // function assignParticularWithdrawalRights(
+    //     uint256 tokenId,
+    //     address newRightsHolder,
+    //     uint256 time
+    // ) public onlyTokenOwner(tokenId) returns (bool success) {
+    //     require(tokenId_to_assignment_time_of_withdrawal_rights[tokenId] == 0);
+    //     require(tokenId_to_withdrawal_rights_expiry_time[tokenId] == 0);
+    //     require(time > 0);
+
+    //     // needs some good logic governing the circumstances in which you can assign new rights;
+    //     tokenId_to_address_withdrawal_rights[tokenId] = newRightsHolder;
+    //     tokenId_to_assignment_time_of_withdrawal_rights[tokenId] = block
+    //         .timestamp;
+    //     tokenId_to_withdrawal_rights_expiry_time[tokenId] = time;
+    //     return true;
+    // }
+
+    // function revokeParticularWithdrawalRights(
+    //     uint256 tokenId
+    // ) public onlyTokenOwner(tokenId) returns (bool success) {
+    //     require(
+    //         block.timestamp -
+    //             tokenId_to_assignment_time_of_withdrawal_rights[tokenId] >
+    //             tokenId_to_withdrawal_rights_expiry_time[tokenId]
+    //     );
+    //     tokenId_to_assignment_time_of_withdrawal_rights[tokenId] = 0;
+    //     tokenId_to_withdrawal_rights_expiry_time[tokenId] = 0;
+    //     tokenId_to_address_withdrawal_rights[tokenId] = address(0);
+    //     return true;
+    // }
+
+    // function withdrawFromParticular(
+    //     uint256 tokenId
+    // ) public returns (bool success) {
+    //     address rightsHolder = tokenId_to_address_withdrawal_rights[tokenId];
+    //     address particularHolder = ownerOf(tokenId);
+    //     require(
+    //         msg.sender == rightsHolder || msg.sender == particularHolder,
+    //         "Invalid sender"
+    //     );
+
+    //     if (rightsHolder == address(0)) {
+    //         rightsHolder = particularHolder;
+    //     }
+
+    //     (bool _success, ) = rightsHolder.call{
+    //         value: tokenId_to_balances[tokenId]
+    //     }("");
+    //     require(_success, "The withdrawal didn't go through");
+    //     if (_success) {
+    //         tokenId_to_balances[tokenId] = 0;
+    //         return true;
+    //     } else {
+    //         return false;
+    //     }
+    // }
 
     function gcd(uint a, uint b) private pure returns (uint) {
         if (b == 0) {
@@ -302,7 +458,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         return gcd(b, a % b);
     }
 
-    function areCoprime(uint a, uint b) internal pure returns (bool) {
+    function areCoprime(uint a, uint b) private pure returns (bool) {
         return gcd(a, b) == 1;
     }
 
@@ -313,41 +469,27 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
 
     function setDirectMintTax(
         uint256 num,
-        uint256 tokenId, // in 1000000000000 wei (10000 gwei)
         uint256 amount // in gwei
-    ) public {
-        if (msg.sender != ownerOf(num_to_universal[num].tokenId)) {
-            revert NotOwnerOfUniversal();
-        }
+    ) public onlyUniversalRightsHolder(num) {
         if (amount < 0) {
             revert SettingNegativeTax();
         }
-        // require(amount >= 0, "Negative tax not allowed");
-
-        if (isUniversal(tokenId)) {
-            revert BurningAUniversal();
-        }
-
-        require(
-            tokenId_to_metadata[tokenId].number != 1,
-            "Cheeky! 1 is coprime with everything yes, but not allowed for our purposes!"
-        );
-
-        if (!areCoprime(num, tokenId_to_metadata[tokenId].number)) {
-            revert NotCoprime();
-        }
-        _burn(tokenId);
-
-        // Note that universal taxes are set in absolute amounts, not basis points.
-
-        universal_to_tax[num] = amount;
+        console.log("here!");
+        universal_to_directTax[num] = amount;
+        console.log(universal_to_directTax[num]);
     }
 
-    modifier onlyOwnerOfUniversal(uint256 num) {
+    modifier onlyUniversalOwner(uint256 num) {
+        // console.log(ownerOf(num_to_universal[num].tokenId), msg.sender);
         require(
             msg.sender == ownerOf(num_to_universal[num].tokenId),
             "Not owner of universal"
         );
+        _;
+    }
+
+    modifier onlyTokenOwner(uint256 tokenId) {
+        require(msg.sender == ownerOf(tokenId), "Not owner of token");
         _;
     }
 
@@ -359,16 +501,16 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     function setMintByAdditionTax(
         uint256 num,
         uint256 tokenId1,
-        uint256 tokenId2 // in 1000000000000 wei (10000 gwei)
+        uint256 tokenId2 // in 10000000000000 wei (10000 gwei)
     )
         public
-        onlyOwnerOfUniversal(num)
+        onlyUniversalOwner(num)
         notBurningAUniversal(tokenId1)
         notBurningAUniversal(tokenId2)
     {
         uint256 n1 = tokenId_to_metadata[tokenId1].number;
         uint256 n2 = tokenId_to_metadata[tokenId2].number;
-        universal_to_additionTax[num] = (n1 + n2) * 1000000000000; //
+        universal_to_additionTax[num] = (n1 + n2) * 10000000000000; //
         _burn(tokenId1);
         _burn(tokenId2);
     }
@@ -376,16 +518,16 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     function setMintByMultiplicationTax(
         uint256 num,
         uint256 tokenId1,
-        uint256 tokenId2 // in 1000000000000 wei (10000 gwei)
+        uint256 tokenId2 // in 10000000000000 wei (10000 gwei)
     )
         public
-        onlyOwnerOfUniversal(num)
+        onlyUniversalOwner(num)
         notBurningAUniversal(tokenId1)
         notBurningAUniversal(tokenId2)
     {
         uint256 n1 = tokenId_to_metadata[tokenId1].number;
         uint256 n2 = tokenId_to_metadata[tokenId2].number;
-        universal_to_multiplicationTax[num] = (n1 * n2) * 1000000000000; //
+        universal_to_multiplicationTax[num] = (n1 * n2) * 10000000000000; //
         _burn(tokenId1);
         _burn(tokenId2);
     }
@@ -393,16 +535,16 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     function setMintByExponentiationTax(
         uint256 num,
         uint256 tokenId1,
-        uint256 tokenId2 // in 1000000000000 wei (10000 gwei)
+        uint256 tokenId2 // in 10000000000000 wei (10000 gwei)
     )
         public
-        onlyOwnerOfUniversal(num)
+        onlyUniversalRightsHolder(num)
         notBurningAUniversal(tokenId1)
         notBurningAUniversal(tokenId2)
     {
         uint256 n1 = tokenId_to_metadata[tokenId1].number;
         uint256 n2 = tokenId_to_metadata[tokenId2].number;
-        universal_to_exponentiationTax[num] = (n1 ** n2) * 1000000000000; //
+        universal_to_exponentiationTax[num] = (n1 ** n2) * 10000000000000; //
         _burn(tokenId1);
         _burn(tokenId2);
     }
@@ -410,17 +552,17 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     function setMintBySubtractionTax(
         uint256 num,
         uint256 tokenId1,
-        uint256 tokenId2 // in 1000000000000 wei (10000 gwei)
+        uint256 tokenId2 // in 10000000000000 wei (10000 gwei)
     )
         public
-        onlyOwnerOfUniversal(num)
+        onlyUniversalRightsHolder(num)
         notBurningAUniversal(tokenId1)
         notBurningAUniversal(tokenId2)
     {
         uint256 n1 = tokenId_to_metadata[tokenId1].number;
         uint256 n2 = tokenId_to_metadata[tokenId2].number;
         require(n1 > n2, "Tax cannot be negative");
-        universal_to_exponentiationTax[num] = (n1 - n2) * 1000000000000; //
+        universal_to_exponentiationTax[num] = (n1 - n2) * 10000000000000; //
         _burn(tokenId1);
         _burn(tokenId2);
     }
@@ -438,7 +580,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
         uint256 generatingTokenId1,
         uint256 generatingTokenId2,
         uint256 tokenId
-    ) internal {
+    ) private {
         if (!universalExists(targetNum)) {
             uint256[] memory primes = factorise(targetNum);
             num_to_universal[targetNum] = Universal(
@@ -772,7 +914,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////////////////////
 
     // https://ethereum.stackexchange.com/questions/132239/how-to-compare-string-and-bytes32-in-an-optimal-way
-    function toByte(uint8 _uint8) internal pure returns (bytes1) {
+    function toByte(uint8 _uint8) private pure returns (bytes1) {
         if (_uint8 < 10) {
             return bytes1(_uint8 + 48);
         } else {
@@ -782,7 +924,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
 
     function bytes32ToString(
         bytes32 _bytes32
-    ) internal pure returns (string memory) {
+    ) private pure returns (string memory) {
         uint8 i = 0;
         bytes memory bytesArray = new bytes(64);
         uint256 l = bytesArray.length;
@@ -924,7 +1066,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
 
     function wrapCanvas(
         bytes memory stuffInside
-    ) internal pure returns (string memory drawing) {
+    ) private pure returns (string memory drawing) {
         return
             string(
                 abi.encodePacked(
@@ -1043,7 +1185,7 @@ contract VNO is ERC721, Ownable, ReentrancyGuard {
     function divReturnDecimal(
         uint256 x,
         uint256 y
-    ) public view returns (bytes memory) {
+    ) public pure returns (bytes memory) {
         uint256 _x = x;
         uint256 _y = y;
 

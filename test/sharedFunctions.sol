@@ -25,8 +25,8 @@ contract SharedFunctions is Test {
     CheatCodes cheats = CheatCodes(HEVM_ADDRESS);
     // address HEVM_ADDRESS = 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D;
 
-    address alice = cheats.addr(1);
-    address bob = cheats.addr(2);
+    address alice = address(0xAA);
+    address bob = address(0xBB);
     address carol = cheats.addr(3);
     address dominic = cheats.addr(4);
 
@@ -39,13 +39,13 @@ contract SharedFunctions is Test {
         vno = new VNO();
     }
 
-    string emptyset = "{}";
-    string e = "{}";
-    string i = "{{}}";
-    string ii = "{{{}}}";
-    string iii = "{{{{}}}}";
-    string v = "{{{{{{}}}}}}";
-    string vi = "{{{{{{{}}}}}}}";
+    // string emptyset = "{}";
+    // string e = "{}";
+    // string i = "{{}}";
+    // string ii = "{{{}}}";
+    // string iii = "{{{{}}}}";
+    // string v = "{{{{{{}}}}}}";
+    // string vi = "{{{{{{{}}}}}}}";
 
     function stringsEq(
         string memory str1,
@@ -54,14 +54,6 @@ contract SharedFunctions is Test {
         return (keccak256(abi.encodePacked(str1)) ==
             keccak256(abi.encodePacked(str2)));
     }
-
-    // struct Universal {
-    //     uint256 number;
-    //     uint256 instances;
-    //     uint256 activeParticulars;
-    //     uint256[] primes;
-    //     bool made;
-    // }
 
     function getUniversalFromTokenId(
         uint256 tokenId
@@ -151,4 +143,26 @@ contract SharedFunctions is Test {
 
         return nid;
     }
+
+    function get_balance_from_universal(
+        uint256 universal
+    ) public view returns (uint256 balance) {
+        uint256 tokenId = get_tokenId_from_universal(universal);
+        balance = vno.tokenId_to_balances(tokenId);
+        return balance;
+    }
+
+    function get_tax_from_universal(
+        uint256 num
+    ) public view returns (uint256 tax) {
+        tax = vno.universal_to_directTax(num);
+        return tax;
+    }
+
+    // function get_tokenId_from_universal(
+    //     uint256 num
+    // ) public view returns (uint256 tokenId) {
+    //     tokenId = vno.universal_to_tokenId(num);
+    //     return tokenId;
+    // }
 }
